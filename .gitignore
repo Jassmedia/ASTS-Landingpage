@@ -2,3 +2,14 @@
 node_modules
 *.log
 .DS_Store
+
+# Secrets: never commit these (templates like .env.example are fine)
+.env
+.env.*
+!.env.example
+*service-account*.json
+*.pem
+*.key
+
+# Local deploy settings (Vercel CLI)
+.vercel

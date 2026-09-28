@@ -11,8 +11,20 @@
      ========================================================= -->
 <script>
   window.ASTS_CONFIG = {
-    // Paste your Apps Script Web App URL here (ends with /exec)
-    APPS_SCRIPT_URL: 'PASTE_YOUR_WEB_APP_URL_HERE',
+    // Paste your Apps Script Web App URL here (ends with /exec).
+    // When the page is opened on localhost, the form posts to the local backend instead.
+    APPS_SCRIPT_URL: /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+      ? 'http://localhost:5000/api/registrations'
+      : 'PASTE_YOUR_WEB_APP_URL_HERE',
+    // Anonymous visitor/click tracking endpoint. Empty = tracking off.
+    TRACKING_URL: /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+      ? 'http://localhost:5000/api/track'
+      : '',
+    // Where "Book Free Demo" sends visitors to register. On that site itself the
+    // buttons just scroll to the form. (Locally, 127.0.0.1 plays the register site.)
+    REGISTER_URL: /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
+      ? 'http://127.0.0.1:8080/#book'
+      : 'https://register.aststraining.com/#book',
     // From Google Ads > Goals > Conversions > your conversion action > Tag setup
     ADS_ID: 'AW-XXXXXXXXX',
     ADS_CONVERSION_LABEL: 'CONVERSION_LABEL',
@@ -37,6 +49,91 @@
   function gtag(){ dataLayer.push(arguments); }
   gtag('js', new Date());
   gtag('config', window.ASTS_CONFIG.ADS_ID, { allow_enhanced_conversions: true });
+</script>
+
+<!-- Visitor & click tracking: anonymous, and never blocks the page or the form -->
+<script>
+  window.ASTS_TRACK = (function () {
+    var url = window.ASTS_CONFIG.TRACKING_URL;
+    function newId() {
+      try { return crypto.randomUUID(); }
+      catch (e) { return Date.now().toString(36) + Math.random().toString(36).slice(2, 12); }
+    }
+    function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+    function save(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+
+    // Random ID kept in this browser, so a refresh counts as the same visitor.
+    // Visitors sent here from the landing page bring their ID (?sid=...), so
+    // their click there and their registration here count as one person.
+    var params = new URLSearchParams(location.search);
+    var incoming = params.get('sid');
+    var sessionId = /^[A-Za-z0-9_-]{8,64}$/.test(incoming || '') ? incoming : load('asts_sid') || newId();
+    save('asts_sid', sessionId);
+    if (incoming !== null) {
+      params.delete('sid'); // keep the ID out of links people share or bookmark
+      try { history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '') + location.hash); } catch (e) {}
+    }
+    var formStarted = load('asts_form_started') === sessionId;
+
+    // Registration page link carrying this visitor's ID and campaign tags,
+    // or null when the registration form is on this site already
+    function registerLink() {
+      try {
+        if (!window.ASTS_CONFIG.REGISTER_URL) return null;
+        var target = new URL(window.ASTS_CONFIG.REGISTER_URL, location.href);
+        if (target.host === location.host) return null;
+        new URLSearchParams(location.search).forEach(function (value, key) {
+          if (!target.searchParams.has(key)) target.searchParams.set(key, value); // utm_*, gclid
+        });
+        target.searchParams.set('sid', sessionId);
+        return target.href;
+      } catch (e) { return null; }
+    }
+
+    function send(eventType) {
+      if (!url) return;
+      try {
+        var params = new URLSearchParams(location.search);
+        var body = JSON.stringify({
+          session_id: sessionId,
+          event_type: eventType,
+          page: location.pathname,
+          utm_source: params.get('utm_source') || undefined,
+          gclid: params.has('gclid') || undefined,
+          referrer: document.referrer || undefined
+        });
+        if (navigator.sendBeacon && navigator.sendBeacon(url, body)) return;
+        fetch(url, { method: 'POST', body: body, keepalive: true }).catch(function () {});
+      } catch (e) { /* tracking must never break the page */ }
+    }
+
+    send('page_view');
+
+    // Every "Book Free Demo" button, including the form's submit button.
+    // The click is recorded first; then, if registration happens on another
+    // site, the visitor is sent there (the beacon still arrives).
+    document.addEventListener('click', function (e) {
+      var button = e.target.closest && e.target.closest('a[href="#book"], #submitBtn');
+      if (!button || !/book/i.test(button.textContent) || !/demo/i.test(button.textContent)) return;
+      send('demo_button_click');
+      var link = button.tagName === 'A' && registerLink();
+      if (!link) return;
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey || e.shiftKey) window.open(link, '_blank', 'noopener');
+      else location.href = link;
+    }, true);
+
+    // The first time someone fills in the demo form (once per visitor)
+    document.addEventListener('input', function (e) {
+      var field = e.target;
+      if (formStarted || !field.closest || !field.closest('#demoForm') || field.type === 'hidden' || field.name === 'website') return;
+      formStarted = true;
+      save('asts_form_started', sessionId);
+      send('form_started');
+    }, true);
+
+    return { sessionId: sessionId, newId: newId };
+  })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -774,6 +871,8 @@ const form = document.getElementById('demoForm');
 const msg = document.getElementById('formMsg');
 const submitBtn = document.getElementById('submitBtn');
 const f = name => form.elements.namedItem(name); // safe way to read a field by name
+// One ID per booking: a double-click or a retry resends it, so the backend can't create a second registration
+let submissionId = null;
 
 /* --- Cookie helpers --- */
 function setCookie(name, value, days) {
@@ -959,6 +1058,7 @@ form.addEventListener('submit', async e => {
   }
 
   fillHiddenFields();
+  submissionId = submissionId || (window.ASTS_TRACK ? ASTS_TRACK.newId() : Date.now().toString(36) + Math.random().toString(36).slice(2));
   const name = f('name').value.trim();
   const [iso, countryName, dial] = getCountry();
   const fullPhone = dial + nationalNumber();       // e.g. 919876543210 or 971501234567
@@ -972,6 +1072,7 @@ form.addEventListener('submit', async e => {
     country_code: iso,
     email: email,
     city: f('city').value.trim(),
+    course: 'Oracle EPBCS',
     consent: true,
     hp: f('website').value,
     gclid: f('gclid').value,
@@ -980,7 +1081,9 @@ form.addEventListener('submit', async e => {
     utm_campaign: f('utm_campaign').value,
     utm_term: f('utm_term').value,
     page_url: f('page_url').value,
-    submitted_at: f('submitted_at').value
+    submitted_at: f('submitted_at').value,
+    session_id: window.ASTS_TRACK && ASTS_TRACK.sessionId,  // links the booking to the anonymous visit
+    submission_id: submissionId
   };
 
   setLoading(true);
@@ -995,11 +1098,13 @@ form.addEventListener('submit', async e => {
       signal: controller.signal
     });
     const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Server error');
+    // Local backend replies { success, data: { id } }; Apps Script replies { ok, leadId }
+    if (!data.success && !data.ok) throw new Error(data.message || data.error || 'Server error');
 
-    await fireConversion(email, fullPhone, data.leadId);
+    await fireConversion(email, fullPhone, data.leadId || (data.data && data.data.id));
     showMessage(`Thanks, ${name.split(' ')[0]}! Your demo seat is booked. Check WhatsApp on +${fullPhone} for the confirmation.`, true);
     form.reset();
+    submissionId = null;                               // the next booking is a new submission
     countrySel.value = iso; updateCountryDisplay();   // keep their country after reset
   } catch (err) {
     console.error('Lead submit failed:', err);

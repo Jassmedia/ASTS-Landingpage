@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>ASTS Leads Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="dashboard.css">
+<script src="dashboard.js" defer></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">A</span>
+      <span class="brand-text">ASTS Training <span class="brand-sub">Leads dashboard</span></span>
+    </div>
+    <div class="topbar-actions">
+      <span id="dbBadge" class="pill" hidden></span>
+      <span id="updatedAt" class="updated" aria-live="polite"></span>
+      <button id="refreshBtn" class="btn btn-light" type="button" hidden>Refresh</button>
+      <button id="signOutBtn" class="btn btn-light" type="button" hidden>Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <!-- Shown when the backend has an ADMIN_API_KEY and we don't have it yet -->
+  <section id="login" class="card login" hidden aria-labelledby="loginTitle">
+    <h1 id="loginTitle">Leads dashboard</h1>
+    <p class="muted">Enter the admin key from <code>backend/.env</code> (ADMIN_API_KEY) to view registrations and tracking.</p>
+    <form id="loginForm" class="login-form">
+      <label for="adminKey">Admin key</label>
+      <input id="adminKey" type="password" autocomplete="current-password" required>
+      <button class="btn btn-primary" type="submit">Open dashboard</button>
+      <p id="loginError" class="form-error" role="alert"></p>
+    </form>
+  </section>
+
+  <p id="loadError" class="banner banner-error" role="alert" hidden></p>
+
+  <div id="app" hidden>
+
+    <section class="filters" aria-label="Filters">
+      <div class="range" role="group" aria-label="Date range">
+        <button type="button" data-range="today">Today</button>
+        <button type="button" data-range="yesterday">Yesterday</button>
+        <button type="button" data-range="7d">Last 7 days</button>
+        <button type="button" data-range="30d">Last 30 days</button>
+        <button type="button" data-range="all">All time</button>
+        <button type="button" data-range="custom">Custom</button>
+      </div>
+      <div id="customRange" class="custom-range" hidden>
+        <label>From <input type="date" id="fromDate"></label>
+        <label>To <input type="date" id="toDate"></label>
+      </div>
+      <div class="selects">
+        <label class="field">Course <select id="fCourse" data-filter="course"><option value="">All courses</option></select></label>
+        <label class="field">City <select id="fCity" data-filter="city"><option value="">All cities</option></select></label>
+        <label class="field">Status
+          <select id="fState">
+            <option value="">All leads</option>
+            <option value="registered">Registered</option>
+            <option value="clicked">Clicked, not registered</option>
+          </select>
+        </label>
+        <label class="field">Source <select id="fSource" data-filter="source"><option value="">All sources</option></select></label>
+        <button id="resetFilters" class="btn btn-ghost" type="button">Reset</button>
+      </div>
+    </section>
+    <p class="filter-note">Course and city narrow the registration numbers. Status picks which lead list to show. Date and source apply to everything.</p>
+
+    <section class="stats" aria-label="Key numbers">
+      <article class="stat">
+        <h2 class="stat-label">Total visitors</h2>
+        <p class="stat-value" id="sVisitors">–</p>
+        <p class="stat-sub" id="sVisitorsSub"></p>
+      </article>
+      <article class="stat">
+        <h2 class="stat-label">Demo clicks</h2>
+        <p class="stat-value" id="sClicks">–</p>
+        <p class="stat-sub" id="sClicksSub"></p>
+      </article>
+      <article class="stat stat-green">
+        <h2 class="stat-label">Registrations</h2>
+        <p class="stat-value" id="sRegs">–</p>
+        <p class="stat-sub" id="sRegsSub"></p>
+      </article>
+      <article class="stat">
+        <h2 class="stat-label">Conversion rate</h2>
+        <p class="stat-value" id="sRate">–</p>
+        <p class="stat-sub">Registrations ÷ unique visitors</p>
+      </article>
+    </section>
+
+    <section class="card metrics" aria-label="All numbers">
+      <dl>
+        <div><dt>Unique visitors</dt><dd id="mVisitors">–</dd></div>
+        <div><dt>Total page views</dt><dd id="mViews">–</dd></div>
+        <div><dt>Unique demo-button clickers</dt><dd id="mClickers">–</dd></div>
+        <div><dt>Total demo-button clicks</dt><dd id="mClicks">–</dd></div>
+        <div><dt>Form starts</dt><dd id="mForms">–</dd></div>
+        <div><dt>Registrations</dt><dd id="mRegs">–</dd></div>
+      </dl>
+    </section>
+
+    <div class="grid-2">
+      <section class="card" aria-labelledby="funnelTitle">
+        <h2 id="funnelTitle">Funnel</h2>
+        <p class="card-sub">Unique people at each step, as a share of visitors</p>
+        <div id="funnel" class="funnel"></div>
+      </section>
+
+      <section class="card" aria-labelledby="peopleTitle">
+        <h2 id="peopleTitle">Leads by status</h2>
+        <p class="card-sub">Set automatically from tracking. Each person counted once: someone who clicked and later registered is Registered.</p>
+        <div id="statusBar" class="status-bar" role="img"></div>
+        <ul id="statusLegend" class="status-legend"></ul>
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="trendTitle">
+      <div class="card-head">
+        <div>
+          <h2 id="trendTitle">Daily trend</h2>
+          <p class="card-sub">Unique people per day</p>
+        </div>
+        <button id="trendToggle" class="btn btn-ghost" type="button" aria-expanded="false">Show as table</button>
+      </div>
+      <p id="trendNote" class="muted" hidden></p>
+      <div id="trend" class="multiples"></div>
+      <div id="trendTableWrap" class="table-wrap" hidden></div>
+    </section>
+
+    <section class="card" id="regCard" aria-labelledby="regTitle">
+      <div class="card-head">
+        <div>
+          <h2 id="regTitle">Registrations <span id="regCount" class="count"></span></h2>
+          <p class="card-sub">Everyone here completed the registration, so they are automatically <span class="badge badge-registered">Registered</span></p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="regTable">
+          <thead>
+            <tr>
+              <th scope="col">Name</th><th scope="col">Phone</th><th scope="col">Email</th><th scope="col">City</th>
+              <th scope="col">Course</th><th scope="col">Date</th><th scope="col">Source</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="regEmpty" class="empty" hidden>No registrations for these filters.</p>
+    </section>
+
+    <section class="card" id="clickedCard" aria-labelledby="clickedTitle">
+      <div class="card-head">
+        <div>
+          <h2 id="clickedTitle">Clicked but not registered <span id="clickedCount" class="count"></span></h2>
+          <p class="card-sub">Clicked Book Free Demo but haven't completed registration. They move to Registrations automatically if they do.</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="clickedTable">
+          <thead>
+            <tr>
+              <th scope="col">Last click</th><th scope="col">Anonymous visitor ID</th><th scope="col">Source</th>
+              <th scope="col">Device</th><th scope="col" class="num">Clicks</th><th scope="col">Activity</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="clickedEmpty" class="empty" hidden>Nobody in this range clicked without registering.</p>
+    </section>
+
+    <section class="card sheets" aria-labelledby="sheetsTitle">
+      <div class="card-head">
+        <div>
+          <h2 id="sheetsTitle">Google Sheets</h2>
+          <p id="sheetsStatus" class="card-sub"></p>
+        </div>
+        <button id="syncBtn" class="btn btn-primary" type="button">Sync now</button>
+      </div>
+      <p id="sheetsError" class="banner banner-error" hidden></p>
+    </section>
+  </div>
+</main>
+
+<div id="tooltip" class="tooltip" hidden></div>
+</body>
+</html>

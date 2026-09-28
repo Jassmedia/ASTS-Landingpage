@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+
+# Google service-account keys must never be committed
+google-service-account*.json
+*service-account*.json
