@@ -185,7 +185,7 @@ then register. The row shows those values, and Analytics → *Campaigns and sour
 | --- | --- |
 | Total Visitors | All `page_view` events: every page load, refreshes included |
 | Unique Visitors | Different Visitor IDs seen |
-| Demo Button Clicks | All `demo_button_click` events (the Book Free Demo buttons, including the form's submit button) |
+| Demo Button Clicks | All `demo_button_click` events: clicks on the Book Free Demo buttons that open or scroll to the form (the form's own submit button is not counted) |
 | Unique Clickers | Different Visitor IDs that clicked |
 | Form Starts | Different Visitor IDs that started typing in the form |
 | Registrations | Rows in `Registrations` |

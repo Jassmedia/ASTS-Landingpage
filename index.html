@@ -153,11 +153,13 @@
 
     send('page_view');
 
-    // Every "Book Free Demo" button, including the form's submit button.
+    // Every "Book Free Demo" button that opens or scrolls to the registration
+    // form. The form's own submit button is NOT counted: a registration is
+    // recorded only when the Apps Script saves it (registration_submitted).
     // The click is recorded first; then, if registration happens on another
     // site, the visitor is sent there (the beacon still arrives).
     document.addEventListener('click', function (e) {
-      var button = e.target.closest && e.target.closest('a[href="#book"], #submitBtn');
+      var button = e.target.closest && e.target.closest('a[href="#book"]');
       if (!button || !/book/i.test(button.textContent) || !/demo/i.test(button.textContent)) return;
       send('demo_button_click');
       var link = button.tagName === 'A' && registerLink();
