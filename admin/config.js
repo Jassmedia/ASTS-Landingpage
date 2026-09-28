@@ -5,5 +5,5 @@
  * The URL is not a secret. The admin key is typed in at sign-in and never saved.
  */
 window.ADMIN_CONFIG = {
-  APPS_SCRIPT_URL: 'PASTE_YOUR_WEB_APP_URL_HERE'
+  APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbybOMzH2JMAS7qR1wJhhExzjHbK94b81dpAGnI2x26oJKsp7E8-kO136Wpaovzzy4Gp/exec'
 };
