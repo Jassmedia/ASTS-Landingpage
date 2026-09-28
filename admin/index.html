@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<!-- Only this folder's own files may run, and data may only come from Google Apps Script -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
+<title>ASTS Admin Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a1f5c'/%3E%3Crect x='7' y='17' width='4' height='8' rx='1' fill='%23ffd21f'/%3E%3Crect x='14' y='11' width='4' height='14' rx='1' fill='%23ffffff'/%3E%3Crect x='21' y='6' width='4' height='19' rx='1' fill='%23ffffff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="admin.css">
+<!-- The Apps Script /exec URL is set in config.js -->
+<script src="config.js"></script>
+<script src="admin.js" defer></script>
+</head>
+<body>
+
+<p id="boot" class="boot">
+  Loading the dashboard… If this message stays, open the page through http:// instead of
+  double-clicking the file, for example run <code>node server.js</code> in the project folder and open
+  http://localhost:8080/admin/ (see apps-script/README.md).
+</p>
+
+<!-- ===================== Not connected yet ===================== -->
+<main id="setupView" class="center-view" hidden>
+  <section class="card center-card">
+    <div class="brand brand-dark"><span class="brand-mark">ASTS</span><span>Admin Dashboard</span></div>
+    <h1>Connect the dashboard</h1>
+    <p id="setupMessage">Paste the real Apps Script <strong>/exec</strong> URL into <code>admin/config.js</code>
+      (<code>ADMIN_CONFIG.APPS_SCRIPT_URL</code>), then reload this page.</p>
+    <p class="muted">It must be the same URL as <code>ASTS_CONFIG.APPS_SCRIPT_URL</code> in <code>index.html</code>.
+      Step-by-step instructions: <code>apps-script/README.md</code>.</p>
+  </section>
+</main>
+
+<!-- ===================== Sign in ===================== -->
+<main id="loginView" class="center-view" hidden>
+  <form id="loginForm" class="card center-card" novalidate>
+    <div class="brand brand-dark"><span class="brand-mark">ASTS</span><span>Admin Dashboard</span></div>
+    <h1>Sign in</h1>
+    <p class="muted">Enter your admin key. It is the <code>ADMIN_KEY</code> value in Apps Script:
+      Project Settings → Script properties.</p>
+    <!-- Lets your browser's password manager remember the key if you choose -->
+    <input class="visually-hidden" type="text" name="username" value="ASTS admin" autocomplete="username" tabindex="-1" aria-hidden="true" readonly>
+    <label class="field-label" for="adminKey">Admin key</label>
+    <input class="input" id="adminKey" name="password" type="password" autocomplete="current-password" spellcheck="false" required>
+    <button class="btn btn-primary btn-block" id="loginBtn" type="submit">Sign in</button>
+    <p class="form-error" id="loginError" role="alert" hidden></p>
+    <p class="fine-print">The key stays only in this tab's memory. It is sent inside the encrypted request body,
+      never in the URL, and this page never saves it. Reloading or closing the tab signs you out.</p>
+  </form>
+</main>
+
+<!-- ===================== Dashboard ===================== -->
+<div id="appView" hidden>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand"><span class="brand-mark">ASTS</span><span>Admin Dashboard</span></div>
+      <nav class="tabs" role="tablist" aria-label="Sections">
+        <button type="button" role="tab" id="tab-dashboard" data-tab="dashboard" aria-controls="panel-dashboard" aria-selected="true">Dashboard</button>
+        <button type="button" role="tab" id="tab-registrations" data-tab="registrations" aria-controls="panel-registrations" aria-selected="false" tabindex="-1">Registrations</button>
+        <button type="button" role="tab" id="tab-analytics" data-tab="analytics" aria-controls="panel-analytics" aria-selected="false" tabindex="-1">Analytics</button>
+        <button type="button" role="tab" id="tab-tracking" data-tab="tracking" aria-controls="panel-tracking" aria-selected="false" tabindex="-1">Tracking</button>
+      </nav>
+      <div class="topbar-actions">
+        <span class="last-updated" id="lastUpdated" aria-live="polite">Last Updated: —</span>
+        <button type="button" class="btn btn-light" id="refreshBtn"><span class="spinner" aria-hidden="true"></span><span>Refresh</span></button>
+        <button type="button" class="btn btn-ghost" id="signOutBtn">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="filters">
+    <div class="wrap filters-inner">
+      <div class="segmented" role="group" aria-label="Period">
+        <button type="button" data-period="today" aria-pressed="false">Today</button>
+        <button type="button" data-period="yesterday" aria-pressed="false">Yesterday</button>
+        <button type="button" data-period="7d" aria-pressed="true">Last 7 Days</button>
+        <button type="button" data-period="30d" aria-pressed="false">Last 30 Days</button>
+        <button type="button" data-period="month" aria-pressed="false">This Month</button>
+        <button type="button" data-period="all" aria-pressed="false">All Time</button>
+        <button type="button" data-period="custom" aria-pressed="false">Custom</button>
+      </div>
+      <form class="custom-range" id="customRange" novalidate hidden>
+        <label>From <input class="input" type="date" id="customFrom" required></label>
+        <label>To <input class="input" type="date" id="customTo" required></label>
+        <button class="btn btn-primary" type="submit">Apply</button>
+      </form>
+      <p class="period-label" id="periodLabel"></p>
+    </div>
+  </div>
+
+  <main class="wrap content" id="content">
+    <p class="banner" id="statusBanner" role="status" hidden></p>
+
+    <!-- Dashboard -->
+    <section class="panel" id="panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
+      <div class="kpi-grid" id="kpis"></div>
+      <div class="grid-2">
+        <section class="card">
+          <h2>Lead status</h2>
+          <p class="card-sub">Set automatically. Someone who clicked Book Free Demo and later registered counts as Registered.</p>
+          <div class="status-tiles" id="leadStatus"></div>
+        </section>
+        <section class="card">
+          <h2>Funnel</h2>
+          <p class="card-sub">Different people at each step, as a share of unique visitors</p>
+          <div id="funnel"></div>
+        </section>
+      </div>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Latest registrations</h2>
+            <p class="card-sub">The five most recent in this period</p>
+          </div>
+          <button type="button" class="btn btn-light" data-goto="registrations">View all registrations</button>
+        </div>
+        <div id="latestRegistrations"></div>
+      </section>
+    </section>
+
+    <!-- Registrations -->
+    <section class="panel" id="panel-registrations" role="tabpanel" aria-labelledby="tab-registrations" hidden>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Registrations</h2>
+            <p class="card-sub" id="registrationsSub"></p>
+          </div>
+        </div>
+        <div id="registrationsTable"></div>
+      </section>
+    </section>
+
+    <!-- Analytics -->
+    <section class="panel" id="panel-analytics" role="tabpanel" aria-labelledby="tab-analytics" hidden>
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Over time</h2>
+            <p class="card-sub" id="trendsSub"></p>
+          </div>
+          <button type="button" class="btn btn-light" id="trendViewToggle" aria-pressed="false">Show as table</button>
+        </div>
+        <div class="trend-grid" id="trends"></div>
+        <div id="trendTable" hidden></div>
+      </section>
+      <section class="card">
+        <h2>Registrations by course, city and campaign</h2>
+        <p class="card-sub">From the Registrations tab of the Google Sheet. "(not set)" means the value was empty.</p>
+        <div class="breakdown-grid" id="breakdowns"></div>
+      </section>
+      <section class="card">
+        <h2>Campaigns and sources</h2>
+        <p class="card-sub">Visitors and clicks by the UTM tags they arrived with; registrations by the tags saved with them.</p>
+        <div id="sourcesTable"></div>
+      </section>
+    </section>
+
+    <!-- Tracking -->
+    <section class="panel" id="panel-tracking" role="tabpanel" aria-labelledby="tab-tracking" hidden>
+      <div class="kpi-grid kpi-grid-4" id="eventTiles"></div>
+      <section class="card">
+        <h2>Clicked but not registered</h2>
+        <p class="card-sub">Clicked Book Free Demo in this period and have not registered (at any time). They move out of this list automatically when they register.
+          Visitor IDs are random browser IDs, not personal details.</p>
+        <div id="clickedTable"></div>
+      </section>
+      <section class="card">
+        <h2>Tracking events</h2>
+        <p class="card-sub" id="eventsSub"></p>
+        <div id="eventsTable"></div>
+      </section>
+    </section>
+  </main>
+</div>
+
+</body>
+</html>

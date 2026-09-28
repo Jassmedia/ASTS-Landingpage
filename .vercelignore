@@ -1,0 +1,8 @@
+# Vercel publishes this project as plain static files (index.html, admin/, demo-video.mp4).
+# server.js is only for local preview (node server.js). If Vercel sees it, it runs it as a
+# serverless function and every other file (admin/, the demo video) answers "Not found".
+server.js
+
+# Not part of the website
+backend/
+apps-script/

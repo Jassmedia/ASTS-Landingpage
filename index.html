@@ -11,20 +11,17 @@
      ========================================================= -->
 <script>
   window.ASTS_CONFIG = {
-    // Paste your Apps Script Web App URL here (ends with /exec).
-    // When the page is opened on localhost, the form posts to the local backend instead.
-    APPS_SCRIPT_URL: /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
-      ? 'http://localhost:5000/api/registrations'
-      : 'PASTE_YOUR_WEB_APP_URL_HERE',
-    // Anonymous visitor/click tracking endpoint. Empty = tracking off.
-    TRACKING_URL: /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
-      ? 'http://localhost:5000/api/track'
-      : '',
+    // Google Apps Script Web App URL (ends with /exec). It saves registrations
+    // and tracking events in the Google Sheet. Paste the real URL after deploying
+    // the script; admin/config.js must use the SAME URL.
+    APPS_SCRIPT_URL: 'PASTE_YOUR_WEB_APP_URL_HERE',
     // Where "Book Free Demo" sends visitors to register. On that site itself the
     // buttons just scroll to the form. (Locally, 127.0.0.1 plays the register site.)
     REGISTER_URL: /^(localhost|127\.0\.0\.1)$/.test(location.hostname)
       ? 'http://127.0.0.1:8080/#book'
       : 'https://register.aststraining.com/#book',
+    // The course this page is for. A course passed in the link (?course=) wins.
+    COURSE: 'Oracle EPBCS',
     // From Google Ads > Goals > Conversions > your conversion action > Tag setup
     ADS_ID: 'AW-XXXXXXXXX',
     ADS_CONVERSION_LABEL: 'CONVERSION_LABEL',
@@ -54,29 +51,44 @@
 <!-- Visitor & click tracking: anonymous, and never blocks the page or the form -->
 <script>
   window.ASTS_TRACK = (function () {
-    var url = window.ASTS_CONFIG.TRACKING_URL;
+    var url = window.ASTS_CONFIG.APPS_SCRIPT_URL || '';
+    if (url.indexOf('PASTE_') !== -1) url = ''; // not connected yet: tracking is off
     function newId() {
       try { return crypto.randomUUID(); }
       catch (e) { return Date.now().toString(36) + Math.random().toString(36).slice(2, 12); }
     }
-    function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
-    function save(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+    function load(key, store) { try { return (store || localStorage).getItem(key); } catch (e) { return null; } }
+    function save(key, value, store) { try { (store || localStorage).setItem(key, value); } catch (e) {} }
 
-    // Random ID kept in this browser, so a refresh counts as the same visitor.
-    // Visitors sent here from the landing page bring their ID (?sid=...), so
-    // their click there and their registration here count as one person.
+    // Visitor ID: a random ID kept in this browser (no personal details), so a
+    // refresh or a later return counts as the same visitor. Visitors sent here
+    // from the landing page bring their ID (?ref=...), so the click there and the
+    // registration here count as one person. ?sid= is the older name and still works.
+    var validId = function (id) { return /^[A-Za-z0-9_-]{8,64}$/.test(id || ''); };
     var params = new URLSearchParams(location.search);
-    var incoming = params.get('sid');
-    var sessionId = /^[A-Za-z0-9_-]{8,64}$/.test(incoming || '') ? incoming : load('asts_sid') || newId();
-    save('asts_sid', sessionId);
-    if (incoming !== null) {
-      params.delete('sid'); // keep the ID out of links people share or bookmark
+    var incoming = params.get('ref') || params.get('sid');
+    var visitorId = validId(incoming) ? incoming : validId(load('asts_sid')) ? load('asts_sid') : newId();
+    save('asts_sid', visitorId);
+    if (params.has('ref') || params.has('sid')) {
+      params.delete('ref'); // keep the ID out of links people share or bookmark
+      params.delete('sid');
       try { history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : '') + location.hash); } catch (e) {}
     }
+
+    // Session ID: one visit. A new one starts after 30 minutes without activity.
+    var sessionId = load('asts_session');
+    if (!validId(sessionId) || Date.now() - (+load('asts_seen') || 0) > 30 * 60 * 1000) sessionId = newId();
+    save('asts_session', sessionId);
+    save('asts_seen', String(Date.now()));
     var formStarted = load('asts_form_started') === sessionId;
 
-    // Registration page link carrying this visitor's ID and campaign tags,
-    // or null when the registration form is on this site already
+    // Course chosen on the landing page (?course=...), kept for this browser tab
+    var linkCourse = (params.get('course') || '').trim();
+    if (/^[\w .,&()+\/-]{2,100}$/.test(linkCourse)) save('asts_course', linkCourse, sessionStorage);
+    var course = load('asts_course', sessionStorage) || window.ASTS_CONFIG.COURSE;
+
+    // Registration page link carrying this visitor's tracking ID, the course and
+    // campaign tags, or null when the registration form is on this site already
     function registerLink() {
       try {
         if (!window.ASTS_CONFIG.REGISTER_URL) return null;
@@ -85,25 +97,57 @@
         new URLSearchParams(location.search).forEach(function (value, key) {
           if (!target.searchParams.has(key)) target.searchParams.set(key, value); // utm_*, gclid
         });
-        target.searchParams.set('sid', sessionId);
+        target.searchParams.set('ref', visitorId);
+        if (course) target.searchParams.set('course', course);
         return target.href;
       } catch (e) { return null; }
     }
 
+    // Coarse device and browser names only (no full user agent is stored)
+    var ua = navigator.userAgent || '';
+    var device = /iPad|Tablet|PlayBook|Silk|Kindle|Android(?!.*Mobile)/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)
+      ? 'tablet' : /Mobi|iPhone|iPod|Android|Windows Phone|BlackBerry|Opera Mini/i.test(ua) ? 'mobile' : 'desktop';
+    var browser = /Edg\//.test(ua) ? 'Edge' : /OPR\/|Opera/.test(ua) ? 'Opera' : /SamsungBrowser/.test(ua) ? 'Samsung Internet'
+      : /Firefox\/|FxiOS/.test(ua) ? 'Firefox' : /Chrome\/|CriOS/.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Other';
+    var isBot = /bot\b|crawler|spider|slurp|headlesschrome|lighthouse|pagespeed|prerender/i.test(ua);
+
+    // Campaign tags: from this page's link, else remembered from an earlier ad click (cookies set by the form script)
+    function cookie(name) {
+      var m = document.cookie.match('(?:^|; )' + name + '=([^;]*)');
+      try { return m ? decodeURIComponent(m[1]) : ''; } catch (e) { return ''; }
+    }
+    function attribution() {
+      var p = new URLSearchParams(location.search), saved = {};
+      try { saved = JSON.parse(cookie('asts_utm') || '{}'); } catch (e) {}
+      return {
+        utmSource: p.get('utm_source') || saved.utm_source || '',
+        utmMedium: p.get('utm_medium') || saved.utm_medium || '',
+        utmCampaign: p.get('utm_campaign') || saved.utm_campaign || '',
+        gclid: p.get('gclid') || cookie('asts_gclid') || ''
+      };
+    }
+
     function send(eventType) {
-      if (!url) return;
+      save('asts_seen', String(Date.now())); // activity keeps the visit (session) going
+      if (!url || isBot) return;
       try {
-        var params = new URLSearchParams(location.search);
+        var a = attribution();
         var body = JSON.stringify({
-          session_id: sessionId,
-          event_type: eventType,
-          page: location.pathname,
-          utm_source: params.get('utm_source') || undefined,
-          gclid: params.has('gclid') || undefined,
-          referrer: document.referrer || undefined
+          action: 'track',
+          event: eventType,
+          visitorId: visitorId,
+          sessionId: sessionId,
+          pageUrl: location.href,
+          utmSource: a.utmSource,
+          utmMedium: a.utmMedium,
+          utmCampaign: a.utmCampaign,
+          gclid: a.gclid,
+          device: device,
+          browser: browser
         });
+        // Plain-text body: Apps Script accepts it without a CORS pre-check
         if (navigator.sendBeacon && navigator.sendBeacon(url, body)) return;
-        fetch(url, { method: 'POST', body: body, keepalive: true }).catch(function () {});
+        fetch(url, { method: 'POST', body: body, keepalive: true, credentials: 'omit' }).catch(function () {});
       } catch (e) { /* tracking must never break the page */ }
     }
 
@@ -123,7 +167,7 @@
       else location.href = link;
     }, true);
 
-    // The first time someone fills in the demo form (once per visitor)
+    // The first time someone fills in the demo form (once per visit)
     document.addEventListener('input', function (e) {
       var field = e.target;
       if (formStarted || !field.closest || !field.closest('#demoForm') || field.type === 'hidden' || field.name === 'website') return;
@@ -132,7 +176,7 @@
       send('form_started');
     }, true);
 
-    return { sessionId: sessionId, newId: newId };
+    return { visitorId: visitorId, sessionId: sessionId, course: course, device: device, browser: browser, newId: newId };
   })();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -864,7 +908,7 @@ function updateCountdown() {
 updateCountdown(); setInterval(updateCountdown, 1000);
 
 /* =========================================================
-   7. LEAD FORM: tracking capture + submit to Google Apps Script
+   7. LEAD FORM: tracking capture + submit to the Google Apps Script (Google Sheet)
    ========================================================= */
 const CFG = window.ASTS_CONFIG;
 const form = document.getElementById('demoForm');
@@ -1040,6 +1084,31 @@ function showMessage(text, good) {
   msg.className = 'form-msg ' + (good ? 'ok' : 'bad');
   msg.textContent = text;
 }
+// Only called after the backend confirms the registration was saved
+function showSuccess() {
+  const title = document.createElement('strong');
+  title.textContent = '🎉 Registration Successful!';
+  title.style.cssText = 'display:block;font-size:1rem;margin-bottom:.2rem';
+  msg.className = 'form-msg ok';
+  msg.replaceChildren(title, 'Thank you for registering for the ASTS Free Demo. Our team will contact you shortly.');
+}
+
+// Turns a failed registration into a message people can act on.
+// The form is never cleared on failure, so they can simply try again.
+const HELP = 'or call +91 8688842717.';
+function registrationError(err) {
+  if (err.name === 'AbortError') return `This is taking too long. Check your internet and try again, ${HELP}`;
+  if (err.status === 400 && err.fields) {
+    Object.keys(err.fields).forEach(key => {
+      const input = f(key);
+      if (input && input.closest('.field')) input.closest('.field').classList.add('error');
+    });
+    return `Please check your details: ${Object.values(err.fields).join('. ')}.`;
+  }
+  if (err.status === 429) return `Too many attempts. Please wait a few minutes and try again, ${HELP}`;
+  if (!err.status) return `We couldn't reach our registration system. Your details are still here, so please try again, ${HELP}`;
+  return `Your registration could not be saved right now. Your details are still here, so please try again, ${HELP}`;
+}
 
 /* --- Submit --- */
 form.addEventListener('submit', async e => {
@@ -1064,53 +1133,63 @@ form.addEventListener('submit', async e => {
   const fullPhone = dial + nationalNumber();       // e.g. 919876543210 or 971501234567
   const email = f('email').value.trim();
 
+  const track = window.ASTS_TRACK || {};
   const payload = {
-    source: 'website',
+    action: 'register',
+    visitorId: track.visitorId,        // anonymous visitor ID: links this registration to earlier visits and clicks
+    sessionId: track.sessionId,        // this visit
+    submissionId: submissionId,        // same ID if resent (double-click), so it's saved once
     name: name,
-    phone: fullPhone,                 // country code + number, digits only
-    country: countryName,
-    country_code: iso,
+    phone: fullPhone,                  // country code + number, digits only
     email: email,
     city: f('city').value.trim(),
-    course: 'Oracle EPBCS',
-    consent: true,
-    hp: f('website').value,
+    course: track.course || CFG.COURSE,
+    country: countryName,
+    countryCode: iso,
+    consent: f('consent').checked,
+    utmSource: f('utm_source').value,
+    utmMedium: f('utm_medium').value,
+    utmCampaign: f('utm_campaign').value,
+    utmTerm: f('utm_term').value,
     gclid: f('gclid').value,
-    utm_source: f('utm_source').value,
-    utm_medium: f('utm_medium').value,
-    utm_campaign: f('utm_campaign').value,
-    utm_term: f('utm_term').value,
-    page_url: f('page_url').value,
-    submitted_at: f('submitted_at').value,
-    session_id: window.ASTS_TRACK && ASTS_TRACK.sessionId,  // links the booking to the anonymous visit
-    submission_id: submissionId
+    pageUrl: f('page_url').value,
+    submittedAt: f('submitted_at').value,
+    device: track.device,
+    browser: track.browser,
+    website: f('website').value        // spam trap, always empty for people
   };
 
   setLoading(true);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    // No custom Content-Type header on purpose: plain text avoids a CORS
-    // pre-check that Apps Script can't answer. The script reads it as JSON.
+    // No custom Content-Type header on purpose: the browser sends plain text,
+    // which Apps Script accepts without a CORS pre-check. It reads it as JSON.
     const res = await fetch(CFG.APPS_SCRIPT_URL, {
       method: 'POST',
       body: JSON.stringify(payload),
-      signal: controller.signal
+      signal: controller.signal,
+      credentials: 'omit'
     });
-    const data = await res.json();
-    // Local backend replies { success, data: { id } }; Apps Script replies { ok, leadId }
-    if (!data.success && !data.ok) throw new Error(data.message || data.error || 'Server error');
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* not JSON: treated as a failure below */ }
 
-    await fireConversion(email, fullPhone, data.leadId || (data.data && data.data.id));
-    showMessage(`Thanks, ${name.split(' ')[0]}! Your demo seat is booked. Check WhatsApp on +${fullPhone} for the confirmation.`, true);
+    // Success ONLY when the Apps Script confirms the registration was saved to the Sheet
+    if (!res.ok || !data || data.success !== true || !data.registrationId) {
+      throw Object.assign(new Error((data && data.error) || `HTTP ${res.status}`), {
+        status: data && data.errors ? 400 : res.ok ? 500 : res.status,  // Apps Script always answers 200
+        fields: data && data.errors
+      });
+    }
+
+    showSuccess();
     form.reset();
     submissionId = null;                               // the next booking is a new submission
     countrySel.value = iso; updateCountryDisplay();   // keep their country after reset
+    fireConversion(email, fullPhone, data.registrationId).catch(() => {}); // Google Ads, if set up
   } catch (err) {
-    console.error('Lead submit failed:', err);
-    showMessage(err.name === 'AbortError'
-      ? 'This is taking too long. Check your internet and try again, or call +91 8688842717.'
-      : 'We couldn\'t book your seat just now. Please try again, or call +91 8688842717.', false);
+    console.error('Registration failed:', err);
+    showMessage(registrationError(err), false);        // nothing is cleared, so they can retry
   } finally {
     clearTimeout(timer);
     setLoading(false);
