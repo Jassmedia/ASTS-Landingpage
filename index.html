@@ -731,7 +731,7 @@ section{padding:4.5rem 0}
       <h2>Free Demo Class</h2>
       <p>Join our free demo session to understand the course structure, modules and learning approach.</p>
       <div class="demo-meta">
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span><b>3 October 2026</b><small>8:00 AM – 9:00 AM (IST)</small></span></div>
+        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span><b>11 October 2026</b><small>8:00 AM – 9:00 AM (IST)</small></span></div>
         <div><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.4"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6zM15 20c0-2 .8-3.8 2-5 2.2.2 4 2.3 4 5z"/></svg><span><b>Live Interactive Session</b><small>With Expert Trainer</small></span></div>
         <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.5V14M12 17h.01"/></svg><span><b>Q&amp;A Session</b><small>Get your doubts clarified</small></span></div>
       </div>
@@ -896,8 +896,8 @@ document.querySelectorAll('.faq-q').forEach(btn => {
   });
 });
 
-/* 6. Countdown to the demo: 3 Oct 2026, 8:00 AM IST */
-const demoTime = new Date('2026-10-03T08:00:00+05:30').getTime();
+/* 6. Countdown to the demo: 11 Oct 2026, 8:00 AM IST */
+const demoTime = new Date('2026-10-11T08:00:00+05:30').getTime();
 const pad = n => String(n).padStart(2, '0');
 function updateCountdown() {
   let diff = Math.max(0, demoTime - Date.now());
